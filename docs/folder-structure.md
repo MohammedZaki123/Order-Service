@@ -68,39 +68,35 @@ order-service/
     │   │   ├── errors.ts
     │   │   └── routes.ts
     │   │
-    │   ├── delivery/
-    │   │   ├── controller/delivery.controller.ts
-    │   │   ├── service/delivery.service.ts
-    │   │   ├── service/assignment.service.ts          # auto + manual + reassign logic
-    │   │   ├── repository/delivery.repo.ts
-    │   │   ├── entity/delivery.entity.ts
-    │   │   ├── dto/delivery.request.dto.ts
-    │   │   ├── dto/delivery.response.dto.ts
-    │   │   ├── enums.ts
-    │   │   ├── errors.ts
-    │   │   └── routes.ts
-    │   │
-    │   ├── agent/
+    │   ├── agent/                       # presence, tasks, earnings, delivery lifecycle
     │   │   ├── controller/agent.controller.ts
-    │   │   ├── controller/presence.controller.ts
-    │   │   ├── service/agent.service.ts
     │   │   ├── service/presence.service.ts
+    │   │   ├── service/agent.service.ts
     │   │   ├── service/earning.service.ts
-    │   │   ├── repository/agent-presence.repo.ts
+    │   │   ├── service/delivery-lifecycle.service.ts
     │   │   ├── repository/agent-earning.repo.ts
-    │   │   ├── entity/agent-presence.entity.ts
     │   │   ├── entity/agent-earning.entity.ts
-    │   │   ├── dto/presence.request.dto.ts
+    │   │   ├── dto/agent.request.dto.ts
     │   │   ├── dto/agent.response.dto.ts
     │   │   ├── enums.ts
     │   │   ├── errors.ts
     │   │   └── routes.ts
     │   │
-    │   └── restaurant-finance/
+    │   ├── assignment/                  # auto + manual assign, reassign
+    │   │   ├── controller/assignment.controller.ts
+    │   │   ├── service/assignment.service.ts
+    │   │   ├── dto/assignment.request.dto.ts
+    │   │   ├── dto/assignment.response.dto.ts
+    │   │   ├── errors.ts
+    │   │   └── routes.ts
+    │   │
+    │   └── finance/                     # balance, payouts, settlement on deliver
     │       ├── controller/finance.controller.ts
     │       ├── service/finance.service.ts
+    │       ├── service/settlement.service.ts
     │       ├── repository/restaurant-balance.repo.ts
     │       ├── entity/restaurant-balance.entity.ts
+    │       ├── dto/finance.request.dto.ts
     │       ├── dto/finance.response.dto.ts
     │       ├── errors.ts
     │       └── routes.ts

@@ -33,10 +33,11 @@ export class CoreClient {
                 attempts: 3,
                 initialDelayMs: 50,
                 maxDelayMs: 500,
-                isRetryable: (err) => !(err instanceof AppError) || err.statusCode === 503,
+                isRetryable: (err) => !(err instanceof AppError) || err.statusCode >= 500,
             },
         );
     }
+
 }
 
 export const coreClient = new CoreClient(env.core.baseUrl, env.core.internalApiKey);

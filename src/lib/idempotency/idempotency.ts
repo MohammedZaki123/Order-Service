@@ -3,6 +3,7 @@ import {ICacheProvider} from "../../pkg/cache/cache.interface";
 import {container} from "../di/container";
 import {TOKENS} from "../di/tokens";
 import {toSeconds} from "../../pkg/utils/time";
+import crypto from "crypto";
 
 const TTL = toSeconds(1, "d");
 
@@ -10,8 +11,9 @@ interface IdempotencyOptions {
     strict?: boolean;
 }
 
-// Phase 0 implementation: Redis-only. DB-backed durable store is activated in
-// Phase 1 when the `idempotency_keys` table lands.
+/**
+ * Idempotency middleware with Redis cache and DB fallback.
+ */
 export function idempotency(options: IdempotencyOptions = {}) {
     const {strict = false} = options;
 

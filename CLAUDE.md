@@ -406,3 +406,25 @@ Implement one module end-to-end before starting the next. Order: **orders → pa
 - Recommendations, loyalty, AI delivery optimization, reviews (PRD §13).
 - Payouts as a separate table — payouts are modeled as a `transaction_type` in the `transactions` table.
 - Incentives / promo codes (explicit user instruction).
+
+## 14. Additional Architectural & Business Rules
+
+- **Types**: Do not define interfaces inline in the same file. Always create a `types.ts` file for interfaces and type aliases.
+- **Entities**: Always use `Object.assign(this, data)` in entity constructors for both creation and updates to ensure consistent property assignment.
+- **Caching Strategy**:
+    - Cache "hot" endpoints like `getBranch`, `getRolePermissions`, etc.
+    - Caching for `getBranchProducts` should be done per-product in Redis.
+    - Cold endpoints like `customerAddress` do not need caching as they are accessed infrequently.
+    - Caches for `getBranchOrders` must be invalidated immediately after an order is placed.
+- **Service Fees**: Use a fixed constant of `10` for the `serviceFee` in all regions for now.
+- **Stock Reservation**:
+    - Stock must be reserved *before* the order transaction.
+    - If the order placement fails (transaction rollback), an "undo" request must be sent to the core-service to release the reserved stock.
+- **WebSockets**: Integrate logic from `lib/websocket` into service layers for real-time updates (e.g., during order placement).
+- **Core Event Handlers**:
+    - Define types for event payloads in a separate `types.ts` file.
+    - Handlers should be thin wrappers (like controllers) that delegate logic to specialized services.
+    - Prefer updating the cache with payload data if sufficient, rather than just invalidating it.
+- **Business Logic**:
+    - Strictly follow Phase 1 implementation details.
+    - Implement distance checks between customer and branch using `lat`/`lng` coordinates during order placement.

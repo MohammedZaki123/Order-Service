@@ -1,6 +1,6 @@
 # Business Logic — Restaurant Finance Module
 
-Owner module: `app/restaurant-finance/`
+Owner module: `app/finance/` (balance reads, payout recording). Settlement on deliver is implemented in `app/finance/service/settlement.service.ts`.
 
 Read views over a restaurant's running balance and payout history.
 

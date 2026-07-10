@@ -14,7 +14,12 @@ export function db(region: string): Knex {
  * Consumed starting Phase 7.
  */
 export function dbArchive(region: string): Knex {
-    return getArchiveShard(region);
+    const shard = getArchiveShard(region);
+    // ✅ Fix the error here
+    if (!shard) {
+        throw new Error(`Archive shard not found for region: ${region}`);
+    }
+    return shard;
 }
 
 export async function destroyAll(): Promise<void> {

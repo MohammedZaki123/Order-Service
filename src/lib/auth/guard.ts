@@ -7,5 +7,6 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     if (!token) throw NotAuthenticated;
 
     req.user = verifyAccessToken(token);
+
     next();
 }

@@ -1,11 +1,21 @@
 import {Request, Response, NextFunction} from "express";
 import {NotAuthenticated} from "./errors";
+import {container} from "../di/container";
+import {TOKENS} from "../di/tokens";
+import {PermissionCacheService} from "../rbac/permission.cache.service";
 
 // Role constants kept minimal here; the permission lookup is wired later via a
 // cached projection from core-service (Phase 1+ handler).
 const SYSTEM_ADMIN = "system_admin";
 const RESTAURANT_USER = "restaurant_user";
+const DELIVERY_AGENT = "delivery_agent";
 
+
+export function requireAgent(req: Request, res: Response, next: NextFunction) {
+    if (!req.user) return res.status(401).json({error: "User not authenticated"});
+    if (req.user.role !== DELIVERY_AGENT) return res.status(403).json({error: "Agent role required"});
+    next();
+}
 export interface RBACOptions {
     resource: string;
     action: string;
@@ -13,19 +23,30 @@ export interface RBACOptions {
 }
 
 /**
- * Middleware placeholder: until the permission-cache is wired (via an `app/rbac` module
- * or a lib-level permission client), this middleware enforces only the "system_admin
- * bypass" and rejects anything else with 403. Per-permission checks land in the module
- * phase that needs them.
+ * Middleware: resolves permissions from a read-through cache populated from core-service.
  */
-export function rbac(_options: RBACOptions) {
-    return (req: Request, res: Response, next: NextFunction) => {
-        if (!req.user) throw NotAuthenticated;
-        const {allowSystemAdmin = true} = _options;
-        if (allowSystemAdmin && req.user.role === SYSTEM_ADMIN) return next();
-        // TODO(phase-1): wire permission-cache service for RESTAURANT_USER role.
-        if (req.user.role === RESTAURANT_USER) return next();
-        return res.status(403).json({error: "Permission denied"});
+export function rbac(options: RBACOptions) {
+    return async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            if (!req.user) throw NotAuthenticated;
+            const {allowSystemAdmin = true, resource, action} = options;
+            
+            if (allowSystemAdmin && req.user.role === SYSTEM_ADMIN) return next();
+            
+            if (req.user.role === RESTAURANT_USER) {
+                const permissionService = container.resolve<PermissionCacheService>(TOKENS.PermissionCacheService);
+                const permissionRole = req.user.restaurantRole ?? req.user.role;
+                const permissions = await permissionService.getPermissions(permissionRole);
+                
+                if (permissionService.hasPermission(permissions, resource, action)) {
+                    return next();
+                }
+            }
+            
+            return res.status(403).json({error: "Permission denied"});
+        } catch (err) {
+            next(err);
+        }
     };
 }
 

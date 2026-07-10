@@ -1,6 +1,6 @@
 # Business Logic — Agents Module
 
-Owner module: `app/agent/`
+Owner module: `app/agent/` (presence, tasks, earnings, delivery lifecycle on assigned orders).
 
 Covers agent presence (online/offline/ping), the agent's task list, and earnings reads.
 

@@ -11,7 +11,8 @@ The schema diverges from the rough draft in `img_2.png` per project guidance:
 - **No `incentives` tables.**
 - **No `events_outbox` table.** This service does not emit outbound async events in this milestone (no analytics consumer; no other consumer needs it). Async with core-service is inbound-only — see `docs/system-design.md` §5.
 - **No `customer_order_index` table.** With country-level shards (one DB per country), customers ordering across regions are rare; if/when needed, the cross-region history view will be implemented as a fan-out at the controller level. Removed to keep the milestone surface area small.
-- New tables added: `deliveries`, `idempotency_keys`, `payment_sessions`, `payment_webhook_events`. **No `core_inbound_events`** — inbound-event dedupe lives in Redis (`core-events:dedupe:<eventId>`, SETNX, 24h TTL), not SQL.
+- **No `agent_presence` or `deliveries` tables.** Agent presence (geolocation) is stored ephemerallyonly in Redis using GeoSearch, with a 5-minute TTL. Agent location updates are pushed every 5 minutes. Deliveries are tracked as order state transitions (status: ASSIGNED, PICKED, DELIVERED).
+- New tables added: `idempotency_keys`, `payment_sessions`, `payment_webhook_events`. **No `core_inbound_events`** — inbound-event dedupe lives in Redis (`core-events:dedupe:<eventId>`, SETNX, 24h TTL), not SQL.
 
 ---
 
@@ -31,7 +32,7 @@ The schema diverges from the rough draft in `img_2.png` per project guidance:
 
 | Logical reference         | Where in this service                                | Source of truth     |
 | ------------------------- | ---------------------------------------------------- | ------------------- |
-| `users.id`                | `orders.customer_id`, `transactions.src_acc_id`, `transactions.dst_acc_id`, `deliveries.agent_id`, `agent_presence.agent_id`, `agent_earnings.agent_id` | `core-service.users` |
+| `users.id`                | `orders.customer_id`, `transactions.src_acc_id`, `transactions.dst_acc_id`, `orders.delivery_agent_id`, `agent_earnings.agent_id` | `core-service.users` |
 | `customer_addresses.id`   | `orders.customer_address_id`                         | `core-service.customer_addresses` |
 | `restaurants.id`          | `orders.restaurant_id`, `restaurant_balances.restaurant_id` | `core-service.restaurants` |
 | `restaurant_branches.id`  | `orders.branch_id`                                   | `core-service.restaurant_branches` |
@@ -78,7 +79,7 @@ Forbidden in the hot path. The only handled case is:
 
 ### Tables that ARE sharded
 
-`orders`, `order_items`, `transactions`, `restaurant_balances`, `agent_presence`, `agent_earnings`, `deliveries`, `idempotency_keys`, `payment_sessions`, `payment_webhook_events`.
+`orders`, `order_items`, `transactions`, `restaurant_balances`, `agent_earnings`, `idempotency_keys`, `payment_sessions`, `payment_webhook_events`.
 
 ### Tables that ARE NOT sharded (replicated to every shard, or live once)
 
@@ -306,89 +307,13 @@ CREATE TABLE restaurant_balances (
 -- single-row lookup by (restaurant_id, currency) is the only query — PK suffices.
 ```
 
-Updates use `SELECT ... FOR UPDATE` inside the same transaction as the delivery state transition or payout insert.
+Updates use `SELECT ... FOR UPDATE` inside the same transaction as the order status transition or payout insert.
 
 ---
 
-### 3.7 `deliveries`
+### 3.7 `agent_earnings`
 
-Per-order delivery record. Created when an order is assigned. Allows reassignment history without polluting `orders`.
-
-```sql
-CREATE TABLE deliveries (
-    id              BIGSERIAL PRIMARY KEY,
-    region          TEXT NOT NULL,
-    order_id        BIGINT NOT NULL,
-    agent_id        BIGINT NOT NULL,                              -- logical FK -> core.users.id (delivery_agent role)
-    status          TEXT NOT NULL CHECK (status IN (
-                        'assigned','accepted','rejected','picked','delivered','cancelled','reassigned'
-                    )),
-    pickup_lat      DECIMAL(10,7) NOT NULL,                       -- branch coords at assignment time
-    pickup_lng      DECIMAL(10,7) NOT NULL,
-    dropoff_lat     DECIMAL(10,7) NOT NULL,
-    dropoff_lng     DECIMAL(10,7) NOT NULL,
-    distance_meters INT NULL,                                     -- straight-line at assignment, optional refinement later
-    earning_amount  INT NULL,                                     -- minor units, set at delivered
-    currency        TEXT NOT NULL,
-    assigned_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-    accepted_at     TIMESTAMP NULL,
-    rejected_at     TIMESTAMP NULL,
-    picked_at       TIMESTAMP NULL,
-    delivered_at    TIMESTAMP NULL,
-    reassigned_at   TIMESTAMP NULL,
-    reassigned_from BIGINT NULL,                                  -- self-ref to previous delivery row
-
-    CONSTRAINT fk_deliveries_order_id FOREIGN KEY (order_id) REFERENCES orders(id),
-    CONSTRAINT fk_deliveries_reassigned_from FOREIGN KEY (reassigned_from) REFERENCES deliveries(id)
-);
-
--- supports GET /agents/tasks?status=  (per-agent lookup with status filter)
-CREATE INDEX idx_deliveries_agent_id_status_assigned_at ON deliveries (agent_id, status, assigned_at DESC);
--- supports order -> delivery lookup (latest delivery only matters; small cardinality)
-CREATE INDEX idx_deliveries_order_id ON deliveries (order_id);
--- supports reassignment chain traversal
-CREATE INDEX idx_deliveries_reassigned_from ON deliveries (reassigned_from) WHERE reassigned_from IS NOT NULL;
-```
-
-Notes:
-- Reassignment creates a **new** row with `reassigned_from = old_id`, and updates the old row's status to `reassigned`. This keeps a clear audit trail and avoids destructive updates.
-- `orders.delivery_agent_id` is a denormalized pointer to the **current** assigned agent for fast lookup; it's updated when a new delivery is created.
-
----
-
-### 3.8 `agent_presence`
-
-Tracks delivery agents that are currently online and their last known location. PostGIS `GEOGRAPHY` column for radius queries.
-
-```sql
-CREATE TABLE agent_presence (
-    agent_id        BIGINT PRIMARY KEY,                           -- logical FK -> core.users.id
-    region          TEXT NOT NULL,
-    is_online       BOOLEAN NOT NULL DEFAULT FALSE,
-    last_lat        DECIMAL(10,7) NULL,
-    last_lng        DECIMAL(10,7) NULL,
-    last_seen_at    TIMESTAMP NOT NULL DEFAULT NOW(),
-    location        GEOGRAPHY(Point, 4326) GENERATED ALWAYS AS (
-                        ST_MakePoint(last_lng::float, last_lat::float)::geography
-                    ) STORED,
-    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- supports automatic assignment: find nearest online agents to a pickup point
-CREATE INDEX idx_agent_presence_location_gist ON agent_presence USING GIST (location) WHERE is_online = TRUE;
--- supports cleanup of stale presence rows
-CREATE INDEX idx_agent_presence_last_seen_at ON agent_presence (last_seen_at) WHERE is_online = TRUE;
-```
-
-Notes:
-- We use a single row per agent (UPSERT on ping). Historical presence is **not** retained here — out of scope.
-- Hot reads (assignment scan) use Redis as a write-through cache (`presence:<region>:<agentId>`) to avoid hitting Postgres on every order.
-
----
-
-### 3.9 `agent_earnings`
-
-A per-delivery snapshot for reporting. Could be derived from `transactions` + `deliveries` but a denormalized table makes earnings reads cheap.
+A per-order delivery earnings snapshot for reporting.
 
 ```sql
 CREATE TABLE agent_earnings (
@@ -396,25 +321,23 @@ CREATE TABLE agent_earnings (
     region      TEXT NOT NULL,
     agent_id    BIGINT NOT NULL,
     order_id    BIGINT NOT NULL,
-    delivery_id BIGINT NOT NULL,
     amount      INT NOT NULL,                                      -- minor units
     currency    TEXT NOT NULL,
     earned_at   TIMESTAMP NOT NULL DEFAULT NOW(),
 
     CONSTRAINT fk_agent_earnings_order_id FOREIGN KEY (order_id) REFERENCES orders(id),
-    CONSTRAINT fk_agent_earnings_delivery_id FOREIGN KEY (delivery_id) REFERENCES deliveries(id),
-    CONSTRAINT uq_agent_earnings_delivery_id UNIQUE (delivery_id)
+    CONSTRAINT uq_agent_earnings_order_id UNIQUE (order_id)
 );
 
 -- supports GET /agents/earnings?from=&to=
 CREATE INDEX idx_agent_earnings_agent_earned_at ON agent_earnings (agent_id, earned_at DESC);
 ```
 
-Inserted in the same transaction as `delivery.status='delivered'`. The unique on `delivery_id` makes the operation idempotent.
+Inserted in the same transaction as order status changing to `delivered`. The unique on `order_id` makes the operation idempotent.
 
 ---
 
-### 3.10 `idempotency_keys`
+### 3.8 `idempotency_keys`
 
 Belt-and-suspenders durability for critical write paths. Redis handles the hot path; this table is the source of truth if Redis is lost or evicts the key.
 
@@ -438,7 +361,7 @@ Used only by `POST /orders` and `POST /payments/init`. Looked up after a Redis m
 
 ---
 
-### 3.11 `payment_webhook_events`
+### 3.9 `payment_webhook_events`
 
 Raw webhook log for audit and replay.
 
@@ -467,7 +390,7 @@ Webhook handler:
 
 ---
 
-### 3.12 ~~`core_inbound_events`~~ — removed
+### 3.10 ~~`core_inbound_events`~~ — removed
 
 Dedupe for core-event messages lives in **Redis**, not SQL. One `SET core-events:dedupe:<eventId> "1" NX EX 86400` per message.
 
@@ -490,16 +413,15 @@ Consumer flow (in `lib/core-events/consumer.ts`):
 orders ──(id)── order_items
 orders ──(id)── transactions
 orders ──(id)── payment_sessions
-orders ──(id)── deliveries ──(id)── agent_earnings
+orders ──(id)── agent_earnings
 transactions ──(id)── transactions  (refunded_payment_id self-ref)
-deliveries ──(id)── deliveries     (reassigned_from self-ref)
 ```
 
 Logical (cross-service):
 
 ```
 core.users         ← orders.customer_id
-core.users         ← transactions.src_acc_id, dst_acc_id, deliveries.agent_id, agent_presence.agent_id, agent_earnings.agent_id
+core.users         ← transactions.src_acc_id, dst_acc_id, orders.delivery_agent_id, agent_earnings.agent_id
 core.restaurants   ← orders.restaurant_id, restaurant_balances.restaurant_id
 core.restaurant_branches ← orders.branch_id
 core.customer_addresses  ← orders.customer_address_id
@@ -524,11 +446,6 @@ core.products      ← order_items.product_id
 | `transactions`         | `idx_transactions_provider_reference_id` (partial) | Webhook de-dup at txn level                         |
 | `transactions`         | `idx_transactions_dst_acc_type_created_at` (partial) | `GET /restaurant/payouts?from&to`                |
 | `transactions`         | `idx_transactions_type_status_created_at`          | Admin reconciliation                                |
-| `deliveries`           | `idx_deliveries_agent_id_status_assigned_at`       | Agent task list                                     |
-| `deliveries`           | `idx_deliveries_order_id`                          | Order detail                                        |
-| `deliveries`           | `idx_deliveries_reassigned_from` (partial)         | Audit chain                                         |
-| `agent_presence`       | `idx_agent_presence_location_gist` (partial)       | Auto-assignment proximity scan                      |
-| `agent_presence`       | `idx_agent_presence_last_seen_at` (partial)        | Stale online cleanup job                            |
 | `agent_earnings`       | `idx_agent_earnings_agent_earned_at`               | `GET /agents/earnings?from&to`                      |
 | `idempotency_keys`     | `idx_idempotency_keys_expires_at`                  | TTL cleanup                                         |
 
@@ -546,11 +463,9 @@ Each migration creates a single coherent unit. Order matters because of FK depen
 4. `20260418000040_create_payment_sessions.ts`         — `payment_sessions` + indexes.
 5. `20260418000050_create_transactions.ts`             — `transactions` + indexes.
 6. `20260418000060_create_restaurant_balances.ts`      — `restaurant_balances`.
-7. `20260418000070_create_deliveries.ts`               — `deliveries` + indexes.
-8. `20260418000080_create_agent_presence.ts`           — extension PostGIS, `agent_presence` + GIST index.
-9. `20260418000090_create_agent_earnings.ts`           — `agent_earnings` + indexes.
-10. `20260418000100_create_idempotency_keys.ts`        — `idempotency_keys`.
-11. `20260418000110_create_payment_webhook_events.ts`  — `payment_webhook_events`.
+7. `20260418000090_create_agent_earnings.ts`           — `agent_earnings` + indexes.
+8. `20260418000100_create_idempotency_keys.ts`        — `idempotency_keys`.
+9. `20260418000110_create_payment_webhook_events.ts`  — `payment_webhook_events`.
 
 (Core-event dedupe is Redis, not a migration.)
 

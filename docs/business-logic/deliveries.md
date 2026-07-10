@@ -1,6 +1,6 @@
 # Business Logic — Deliveries Module
 
-Owner module: `app/delivery/`
+Owner module: `app/assignment/` (auto/manual assign, reassign). Agent task lifecycle lives in `app/agent/`.
 
 Responsible for converting a `ready` order into a delivery (assignment), tracking the delivery lifecycle, and supporting reassignment.
 

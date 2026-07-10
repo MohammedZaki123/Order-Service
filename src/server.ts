@@ -9,12 +9,19 @@ import {startCoreEventsConsumer} from "./lib/core-events/consumer";
 import {attachWsServer} from "./lib/websocket/ws-server";
 import {container} from "./lib/di/container";
 import {TOKENS} from "./lib/di/tokens";
+import {registerOrderModuleCoreEventHandlers} from "./app/order/core-events.handlers";
 
 const app = createApp();
 const server = http.createServer(app);
 
-const io = attachWsServer(server);
+export const io = attachWsServer(server);
 container.registerInstance(TOKENS.WsServer, io);
+
+// Mount routes AFTER io is registered so controllers can be resolved with WsServer dependency
+// import {mountRoutes} from "./app";
+// import {registerOrderModuleCoreEventHandlers} from "./app/order/core-events.handlers";
+// mountRoutes(app);
+// container.resolve<OrderEventHandlers>(TOKENS.OrderEventHandlers).register();
 
 server.listen(env.port, async () => {
     logger.info(`order-service listening on :${env.port}`);
@@ -29,6 +36,8 @@ server.listen(env.port, async () => {
     } catch (err) {
         logger.error("shard ping failed", {error: (err as Error).message});
     }
+
+    registerOrderModuleCoreEventHandlers();
 
     messageBroker
         .connect()

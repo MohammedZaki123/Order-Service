@@ -14,6 +14,7 @@ export interface JWTPayload {
 export function verifyAccessToken(token: string): JWTPayload {
     try {
         const decoded = jwt.verify(token, env.jwt.accessSecret) as jwt.JwtPayload & JWTPayload;
+        // console.log("token", decoded);
         return {
             userId: decoded.userId,
             role: decoded.role,
@@ -29,6 +30,7 @@ export function verifyAccessToken(token: string): JWTPayload {
 
 export function verifyRefreshToken(token: string): JWTPayload {
     try {
+        
         const decoded = jwt.verify(token, env.jwt.refreshSecret) as jwt.JwtPayload & JWTPayload;
         return {
             userId: decoded.userId,
