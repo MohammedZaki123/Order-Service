@@ -8,5 +8,6 @@ yarn-error.log*
 /.pnp
 .pnp.js
 .env
+.env.test
 .vscode/*
 /dist*
