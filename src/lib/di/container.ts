@@ -11,26 +11,6 @@ import {CoreDataCacheService} from "../../app/order/service/core-data-cache.serv
 import {PermissionCacheService} from "../rbac/permission.cache.service";
 import {env} from "../config/env";
 
-// Infrastructure
-container.registerSingleton<Logger>(TOKENS.Logger, Logger);
-container.registerInstance(TOKENS.CacheProvider, cacheProvider);
-container.registerInstance(TOKENS.MessageBroker, messageBroker);
-// container.registerSingleton(TOKENS.WsServer, ws)
-
-const kashierClient = new KashierClient({
-    baseUrl: env.kashier.baseUrl,
-    merchantId: env.kashier.merchantId,
-    apiKey: env.kashier.apiKey,
-    secretKey: env.kashier.secretKey,
-    paymentType: env.kashier.paymentType,
-    serverWebhookUrl: env.kashier.webhookUrl,
-    merchantRedirect: env.kashier.returnUrl,
-    failureRedirectEnabled: false,
-    sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
-});
-
-
-
 
 // Payment Module
 import {KashierClient} from "../../pkg/payments/kashier/kashier.client";
@@ -49,6 +29,45 @@ import {AssignmentController} from "../../app/assignment/controller/assignment.c
 import {SettlementService} from "../../app/finance/service/settlement.service";
 
 
+// Infrastructure
+container.registerSingleton<Logger>(TOKENS.Logger, Logger);
+container.registerInstance(TOKENS.CacheProvider, cacheProvider);
+container.registerInstance(TOKENS.MessageBroker, messageBroker);
+// container.registerSingleton(TOKENS.WsServer, ws)
+
+// Lazily initialize KashierClient when first accessed to avoid initialization errors in Docker
+// // This prevents "Cannot access 'kashier_client_1' before initialization" errors during container startup
+// container.registerSingleton<KashierClient>(TOKENS.KashierProvider, () => {
+//     return new KashierClient({
+//         baseUrl: env.kashier.baseUrl,
+//         merchantId: env.kashier.merchantId,
+//         apiKey: env.kashier.apiKey,
+//         secretKey: env.kashier.secretKey,
+//         paymentType: env.kashier.paymentType,
+//         serverWebhookUrl: env.kashier.webhookUrl,
+//         merchantRedirect: env.kashier.returnUrl,
+//         failureRedirectEnabled: false,
+//         sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
+//     });
+// });
+
+
+
+const kashierClient = new KashierClient({
+    baseUrl: env.kashier.baseUrl,
+    merchantId: env.kashier.merchantId,
+    apiKey: env.kashier.apiKey,
+    secretKey: env.kashier.secretKey,
+    paymentType: env.kashier.paymentType,
+    serverWebhookUrl: env.kashier.webhookUrl,
+    merchantRedirect: env.kashier.returnUrl,
+    failureRedirectEnabled: false,
+    sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
+});
+container.registerInstance(TOKENS.KashierProvider, kashierClient);
+
+
+
 // Order Module
 container.registerSingleton<OrderService>(TOKENS.OrderService, OrderService);
 container.registerSingleton<CoreDataCacheService>(TOKENS.CoreDataCacheService, CoreDataCacheService);
@@ -57,7 +76,6 @@ container.registerSingleton<OrderStatusService>(TOKENS.OrderStatusService, Order
 container.registerSingleton<OrderController>(TOKENS.OrderController, OrderController);
 
 // Payment Module Registrations
-container.registerInstance(TOKENS.KashierProvider, kashierClient);
 container.registerSingleton<PaymentService>(TOKENS.PaymentService, PaymentService);
 container.registerSingleton<PaymentWebhookService>(TOKENS.PaymentWebhookService, PaymentWebhookService);
 container.registerSingleton<PaymentController>(TOKENS.PaymentController, PaymentController);
