@@ -18,7 +18,8 @@ services:
       POSTGRES_PASSWORD: boot_postgres
       POSTGRES_DB: postgres
     volumes:
-      - ./docker/postgres-test-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/docker/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -62,7 +63,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
 
-      RABBITMQ_URL: amqp://guest:guest@localhost:5672
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
 
       ACCESS_SECRET: test-access-secret
       REFRESH_SECRET: test-refresh-secret
