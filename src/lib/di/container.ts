@@ -36,35 +36,38 @@ container.registerInstance(TOKENS.MessageBroker, messageBroker);
 // container.registerSingleton(TOKENS.WsServer, ws)
 
 // Lazily initialize KashierClient when first accessed to avoid initialization errors in Docker
-// // This prevents "Cannot access 'kashier_client_1' before initialization" errors during container startup
-// container.registerSingleton<KashierClient>(TOKENS.KashierProvider, () => {
-//     return new KashierClient({
-//         baseUrl: env.kashier.baseUrl,
-//         merchantId: env.kashier.merchantId,
-//         apiKey: env.kashier.apiKey,
-//         secretKey: env.kashier.secretKey,
-//         paymentType: env.kashier.paymentType,
-//         serverWebhookUrl: env.kashier.webhookUrl,
-//         merchantRedirect: env.kashier.returnUrl,
-//         failureRedirectEnabled: false,
-//         sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
-//     });
-// });
-
-
-
-const kashierClient = new KashierClient({
-    baseUrl: env.kashier.baseUrl,
-    merchantId: env.kashier.merchantId,
-    apiKey: env.kashier.apiKey,
-    secretKey: env.kashier.secretKey,
-    paymentType: env.kashier.paymentType,
-    serverWebhookUrl: env.kashier.webhookUrl,
-    merchantRedirect: env.kashier.returnUrl,
-    failureRedirectEnabled: false,
-    sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
+// This prevents "Cannot access 'kashier_client_1' before initialization" errors during container startup
+container.register(TOKENS.KashierProvider, {
+    useFactory: () => {
+        return new KashierClient({
+            baseUrl: env.kashier.baseUrl,
+            merchantId: env.kashier.merchantId,
+            apiKey: env.kashier.apiKey,
+            secretKey: env.kashier.secretKey,
+            paymentType: env.kashier.paymentType,
+            serverWebhookUrl: env.kashier.webhookUrl,
+            merchantRedirect: env.kashier.returnUrl,
+            failureRedirectEnabled: false,
+            sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
+        });
+    }
 });
-container.registerInstance(TOKENS.KashierProvider, kashierClient);
+
+
+
+// const kashierClient = new KashierClient({
+//     baseUrl: env.kashier.baseUrl,
+//     merchantId: env.kashier.merchantId,
+//     apiKey: env.kashier.apiKey,
+//     secretKey: env.kashier.secretKey,
+//     paymentType: env.kashier.paymentType,
+//     serverWebhookUrl: env.kashier.webhookUrl,
+//     merchantRedirect: env.kashier.returnUrl,
+//     failureRedirectEnabled: false,
+//     sessionTimeoutSec: env.payments.sessionTimeoutMin * 60,
+// });
+// container.registerSingleton<TOKENS.KashierProvider>(TOKENS.KashierProvider, kashierClient);
+
 
 
 
