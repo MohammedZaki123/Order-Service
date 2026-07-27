@@ -117,7 +117,6 @@ export async function getBranchProducts(branchId: number, productIds: number[], 
             }
         }),
     );
-    console.log(cached, "cached")
     if (misses.length === 0) return cached;
 
     const res = await coreClient.request<CoreEnvelope<CoreBranchProduct[]>>({
@@ -126,7 +125,6 @@ export async function getBranchProducts(branchId: number, productIds: number[], 
         correlationId,
     });
 
-    console.log("getBranchProducts", res.data);
 
     // Populate the cache with the full rows we just fetched. Events that
     // arrive later for these products will MERGE on top via core-data-cache.
